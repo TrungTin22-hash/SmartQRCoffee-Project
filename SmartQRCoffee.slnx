@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SmartQRCoffee.API/SmartQRCoffee.API.csproj" Id="94fecfda-faac-4c9f-af5a-e80f9929728a" />
+  <Project Path="SmartQRCoffee.Repositories\SmartQRCoffee.Repositories.csproj" />
+  <Project Path="SmartQRCoffee.Services/SmartQRCoffee.Services.csproj" />
+</Solution>

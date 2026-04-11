@@ -1,0 +1,6 @@
+@SmartQRCoffee.API_HostAddress = http://localhost:5121
+
+GET {{SmartQRCoffee.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
