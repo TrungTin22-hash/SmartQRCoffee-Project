@@ -4,16 +4,23 @@ using SmartQRCoffee.Repositories.Repositories.Contracts;
 using SmartQRCoffee.Repositories.Models;
 using SmartQRCoffee.Services.Contracts;
 using SmartQRCoffee.Services.DTOs;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace SmartQRCoffee.Services.Implementations;
 
 public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
+    private readonly IConfiguration _configuration;
 
-    public UserService(IUserRepository userRepository)
+    public UserService(IUserRepository userRepository, IConfiguration configuration)
     {
         _userRepository = userRepository;
+        _configuration = configuration;
     }
 
     public async Task<UserDto> CreateUserAsync(CreateUserDto dto)
@@ -21,7 +28,7 @@ public class UserService : IUserService
         var user = new User
         {
             Username = dto.Username,
-            PasswordHash = dto.Password, // In a real app, hash the password
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
             RoleId = dto.RoleId,
             IsActive = true
         };
@@ -37,21 +44,47 @@ public class UserService : IUserService
         };
     }
 
-    public async Task<UserDto> LoginAsync(UserLoginDto dto)
+    public async Task<AuthResponseDto> LoginAsync(UserLoginDto dto)
     {
         var user = await _userRepository.GetUserByUsernameAsync(dto.Username);
         
-        if (user == null || user.PasswordHash != dto.Password || !user.IsActive)
+        if (user == null || !user.IsActive || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
             throw new Exception("Invalid username or password.");
         }
 
-        return new UserDto
+        var userDto = new UserDto
         {
             UserId = user.UserId,
             Username = user.Username,
             RoleId = user.RoleId,
             RoleName = user.Role?.RoleName ?? string.Empty
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var keyVal = _configuration["Jwt:Key"] ?? throw new Exception("JWT Key not configured");
+        var key = Encoding.UTF8.GetBytes(keyVal);
+        
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.Role, userDto.RoleName)
+            }),
+            Expires = DateTime.UtcNow.AddDays(1),
+            Issuer = _configuration["Jwt:Issuer"],
+            Audience = _configuration["Jwt:Audience"],
+            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+        };
+        
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+
+        return new AuthResponseDto
+        {
+            User = userDto,
+            Token = tokenHandler.WriteToken(token)
         };
     }
 }

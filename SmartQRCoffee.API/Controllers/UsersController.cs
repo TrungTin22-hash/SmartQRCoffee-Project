@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmartQRCoffee.Services.Contracts;
 using SmartQRCoffee.Services.DTOs;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace SmartQRCoffee.API.Controllers;
@@ -40,7 +42,30 @@ public class UsersController : ControllerBase
         }
         catch (System.Exception ex)
         {
-            return BadRequest(new { Message = ex.Message });
+            return BadRequest(new 
+            { 
+                Message = ex.Message,
+                InnerError = ex.InnerException?.Message
+            });
         }
+    }
+
+    [Authorize]
+    [HttpGet("profile")]
+    public IActionResult GetProfile()
+    {
+        // Token hợp lệ thì mới vào được hàm này.
+        // User.FindFirstValue sẽ lấy các Claims mà ta đã setup ở Payload lúc tạo Token!
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var username = User.FindFirstValue(ClaimTypes.Name);
+        var role = User.FindFirstValue(ClaimTypes.Role);
+
+        return Ok(new
+        {
+            Message = "🎉 Chúc mừng! Bạn đã dùng Token truy cập thành công!",
+            UserId = userId,
+            Username = username,
+            Role = role
+        });
     }
 }
