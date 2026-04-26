@@ -84,7 +84,7 @@ public class UserService : IUserService
         return new AuthResponseDto
         {
             User = userDto,
-            Token = tokenHandler.WriteToken(token)
+            AccessToken = tokenHandler.WriteToken(token)
         };
     }
 }

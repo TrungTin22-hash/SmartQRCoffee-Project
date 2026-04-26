@@ -45,6 +45,8 @@ public class UserRepository : IUserRepository
             userInDb.PasswordHash = user.PasswordHash;
             userInDb.RoleId = user.RoleId;
             userInDb.IsActive = user.IsActive;
+            userInDb.RefreshToken = user.RefreshToken;
+            userInDb.RefreshTokenExpiryTime = user.RefreshTokenExpiryTime;
             
             _context.Users.Update(userInDb);
             await _context.SaveChangesAsync();
@@ -62,4 +64,12 @@ public class UserRepository : IUserRepository
         }
         return userInDb;
     }
+
+    public async Task<User?> GetUserByRefreshTokenAsync(string refreshToken)
+    {
+        return await _context.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.RefreshToken == refreshToken);
+    }
 }
+
