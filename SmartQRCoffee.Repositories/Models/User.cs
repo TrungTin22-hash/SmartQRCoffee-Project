@@ -9,6 +9,8 @@ public class User
     public string PasswordHash { get; set; } = null!;
     public int RoleId { get; set; }
     public bool IsActive { get; set; } = true;
+    public string? RefreshToken { get; set; }
+    public DateTime? RefreshTokenExpiryTime { get; set; }
     public virtual Role Role { get; set; } = null!;
     public virtual ICollection<Shift> Shifts { get; set; } = new List<Shift>();
 }

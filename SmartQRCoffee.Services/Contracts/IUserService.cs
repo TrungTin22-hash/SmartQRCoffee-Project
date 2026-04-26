@@ -6,5 +6,5 @@ namespace SmartQRCoffee.Services.Contracts;
 public interface IUserService
 {
     Task<UserDto> CreateUserAsync(CreateUserDto dto);
-    Task<UserDto> LoginAsync(UserLoginDto dto);
+    Task<AuthResponseDto> LoginAsync(UserLoginDto dto);
 }

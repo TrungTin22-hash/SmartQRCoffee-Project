@@ -26,7 +26,7 @@ public class SmartQRCoffeeContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // Connection string for Supabase PostgreSQL
-        optionsBuilder.UseNpgsql("Host=db.xaycpyxshemncmhlerwa.supabase.co;Port=5432;Database=postgres;Username=postgres;Password=Smartqrcoffee123");
+        // Connection string for Supabase PostgreSQL (IPv4 Session Pooler)
+        optionsBuilder.UseNpgsql("Host=aws-1-ap-northeast-1.pooler.supabase.com;Port=5432;Database=postgres;Username=postgres.xaycpyxshemncmhlerwa;Password=Smartqrcoffee123");
     }
 }
