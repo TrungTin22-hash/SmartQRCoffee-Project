@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SmartQRCoffee.Services.Contracts;
 using SmartQRCoffee.Services.DTOs;
@@ -30,6 +31,7 @@ public class OrdersController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin,Staff,Cashier")]
     [HttpPatch("{orderId}/status")]
     public async Task<IActionResult> UpdateOrderStatus(int orderId, [FromBody] UpdateOrderStatusDto dto)
     {

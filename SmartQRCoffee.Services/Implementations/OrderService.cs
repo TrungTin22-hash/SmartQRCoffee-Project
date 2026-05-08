@@ -90,7 +90,22 @@ public class OrderService : IOrderService
         var savedOrder = await _orderRepository.AddOrderAsync(order);
 
         // 5. Send Notification via SignalR Abstraction
-        await _notificationService.NotifyKitchenNewOrderAsync(savedOrder);
+        await _notificationService.NotifyKitchenNewOrderAsync(new
+        {
+            OrderId = savedOrder.OrderId,
+            TableId = savedOrder.TableId,
+            SessionToken = savedOrder.SessionToken,
+            TotalAmount = savedOrder.TotalAmount,
+            Status = savedOrder.Status,
+            PaymentMethod = dto.PaymentMethod,
+            Items = dto.Items.Select(item => new
+            {
+                item.ProductId,
+                item.Quantity,
+                item.Options,
+                item.Note
+            }).ToList()
+        });
 
         return new OrderResponseDto
         {

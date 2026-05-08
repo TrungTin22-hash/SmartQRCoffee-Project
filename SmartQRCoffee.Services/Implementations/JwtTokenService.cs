@@ -24,10 +24,8 @@ public class JwtTokenService : IJwtTokenService
     private readonly IUserRepository _userRepository;
     private readonly IConfiguration _configuration;
 
-    // Access Token sống ngắn (15 phút)
-    private const int AccessTokenExpiryMinutes = 15;
-    // Refresh Token sống dài (7 ngày)
-    private const int RefreshTokenExpiryDays = 7;
+    private int AccessTokenExpiryMinutes => int.Parse(_configuration["JwtConfig:AccessTokenExpirationMinutes"] ?? "15");
+    private int RefreshTokenExpiryDays => int.Parse(_configuration["JwtConfig:RefreshTokenExpirationDays"] ?? "7");
 
     public JwtTokenService(IUserRepository userRepository, IConfiguration configuration)
     {
@@ -153,7 +151,7 @@ public class JwtTokenService : IJwtTokenService
     private string GenerateAccessToken(User user, string roleName, DateTime expires)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
-        var keyVal = _configuration["Jwt:Key"] ?? throw new Exception("JWT Key chưa được cấu hình.");
+        var keyVal = _configuration["JwtConfig:Secret"] ?? throw new Exception("JWT Secret chưa được cấu hình.");
         var key = Encoding.UTF8.GetBytes(keyVal);
 
         var tokenDescriptor = new SecurityTokenDescriptor
@@ -165,8 +163,8 @@ public class JwtTokenService : IJwtTokenService
                 new Claim(ClaimTypes.Role, roleName)
             }),
             Expires = expires,
-            Issuer = _configuration["Jwt:Issuer"],
-            Audience = _configuration["Jwt:Audience"],
+            Issuer = _configuration["JwtConfig:Issuer"],
+            Audience = _configuration["JwtConfig:Audience"],
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature)

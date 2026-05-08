@@ -1,20 +1,61 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.CookiePolicy;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.IdentityModel.Tokens;
+using SmartQRCoffee.API.Hubs;
+using SmartQRCoffee.API.Services;
 using SmartQRCoffee.Repositories.Data;
 using SmartQRCoffee.Repositories.Repositories.Contracts;
 using SmartQRCoffee.Repositories.Repositories.Implementations;
 using SmartQRCoffee.Services.Contracts;
 using SmartQRCoffee.Services.Implementations;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add DbContext
-builder.Services.AddDbContext<SmartQRCoffeeContext>();
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
+var jwtSecret = builder.Configuration["JwtConfig:Secret"]
+    ?? throw new InvalidOperationException("JwtConfig:Secret is not configured.");
+var jwtIssuer = builder.Configuration["JwtConfig:Issuer"]
+    ?? throw new InvalidOperationException("JwtConfig:Issuer is not configured.");
+var jwtAudience = builder.Configuration["JwtConfig:Audience"]
+    ?? throw new InvalidOperationException("JwtConfig:Audience is not configured.");
+var accessTokenCookieName = builder.Configuration["JwtConfig:Cookie:AccessTokenName"] ?? "access_token";
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+var requireHttpsMetadata = builder.Configuration.GetValue<bool>("JwtConfig:RequireHttpsMetadata");
+
+builder.Services.AddDbContext<SmartQRCoffeeContext>(options =>
+    options.UseNpgsql(connectionString));
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        if (allowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(allowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+        else
+        {
+            policy.AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+    });
+});
+
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = null;
+    });
 
 // Register Repositories
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -28,42 +69,57 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ITableService, TableService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<INotificationService, SignalRNotificationService>();
 
-// Mock Notification Service (To be replaced with actual SignalR Hub Context later)
-builder.Services.AddSingleton<INotificationService, MockNotificationService>();
-
-// Add JWT Authentication
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = requireHttpsMetadata;
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? ""))
-        };
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
 
-        options.Events = new JwtBearerEvents
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
         {
-            OnMessageReceived = context =>
+            var token = context.Request.Cookies[accessTokenCookieName];
+            var path = context.HttpContext.Request.Path;
+
+            if (string.IsNullOrEmpty(token))
             {
-                var token = context.Request.Cookies["access_token"];
-                if (!string.IsNullOrEmpty(token))
+                var accessTokenFromQuery = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(accessTokenFromQuery)
+                    && path.StartsWithSegments("/hubs/notifications"))
                 {
-                    context.Token = token;
+                    token = accessTokenFromQuery;
                 }
-                return Task.CompletedTask;
             }
-        };
-    });
 
-// Add services to the container.
+            if (!string.IsNullOrEmpty(token))
+            {
+                context.Token = token;
+            }
+
+            return Task.CompletedTask;
+        }
+    };
+});
+
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -97,7 +153,6 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -105,26 +160,16 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseCookiePolicy(new CookiePolicyOptions
+{
+    MinimumSameSitePolicy = SameSiteMode.Unspecified,
+    Secure = CookieSecurePolicy.SameAsRequest
+});
+app.UseCors("FrontendPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
+app.MapHub<NotificationHub>("/hubs/notifications");
 app.Run();
-
-// Mock implementation
-public class MockNotificationService : INotificationService
-{
-    public Task NotifyCustomerOrderStatusChangedAsync(int tableId, string newStatus)
-    {
-        System.Console.WriteLine($"[MockSignalR] Table {tableId} order status changed to {newStatus}");
-        return Task.CompletedTask;
-    }
-
-    public Task NotifyKitchenNewOrderAsync(object orderPayload)
-    {
-        System.Console.WriteLine($"[MockSignalR] Kitchen received new order: {System.Text.Json.JsonSerializer.Serialize(orderPayload)}");
-        return Task.CompletedTask;
-    }
-}

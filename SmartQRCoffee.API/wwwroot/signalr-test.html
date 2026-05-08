@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartQRCoffee SignalR Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: #111827;
+      color: #f9fafb;
+    }
+    h1 { margin-top: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .card {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-size: 14px;
+      color: #d1d5db;
+    }
+    input, select, button, textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #4b5563;
+      background: #111827;
+      color: #f9fafb;
+    }
+    button {
+      cursor: pointer;
+      background: #2563eb;
+      border: none;
+      margin-top: 12px;
+    }
+    button.secondary { background: #374151; }
+    button.danger { background: #dc2626; }
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .button-row button { width: auto; flex: 1; }
+    #status {
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+    #logs {
+      background: #030712;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      min-height: 260px;
+      padding: 12px;
+      white-space: pre-wrap;
+      overflow: auto;
+    }
+    .hint {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-top: 8px;
+    }
+    code {
+      background: #111827;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>SmartQRCoffee SignalR Test Client</h1>
+  <div id="status">Trạng thái: Chưa kết nối</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Kết nối</h2>
+      <label for="hubUrl">Hub URL</label>
+      <input id="hubUrl" value="http://localhost:5121/hubs/notifications" />
+
+      <label for="accessToken">JWT Access Token</label>
+      <textarea id="accessToken" rows="4" placeholder="Dán access token vào đây nếu hub yêu cầu auth"></textarea>
+
+      <div class="button-row">
+        <button id="connectBtn">Kết nối</button>
+        <button id="disconnectBtn" class="secondary">Ngắt kết nối</button>
+      </div>
+      <div class="hint">Nếu bạn đang dùng cookie auth thì có thể để trống token. Nếu backend yêu cầu query token cho hub, dán JWT vào đây.</div>
+    </div>
+
+    <div class="card">
+      <h2>Join nhóm</h2>
+      <label for="tableId">Table ID</label>
+      <input id="tableId" type="number" value="1" />
+
+      <div class="button-row">
+        <button id="joinKitchenBtn">Join Kitchen</button>
+        <button id="leaveKitchenBtn" class="secondary">Leave Kitchen</button>
+      </div>
+
+      <div class="button-row">
+        <button id="joinTableBtn">Join Table Group</button>
+        <button id="leaveTableBtn" class="secondary">Leave Table Group</button>
+      </div>
+
+      <div class="hint">Bếp dùng group <code>kitchen</code>. Khách theo bàn dùng <code>table-{id}</code>.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Logs sự kiện</h2>
+    <div id="logs"></div>
+    <div class="button-row">
+      <button id="clearLogsBtn" class="danger">Xóa logs</button>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+  <script>
+    let connection = null;
+
+    const statusEl = document.getElementById('status');
+    const logsEl = document.getElementById('logs');
+    const hubUrlEl = document.getElementById('hubUrl');
+    const accessTokenEl = document.getElementById('accessToken');
+    const tableIdEl = document.getElementById('tableId');
+
+    function log(message, data) {
+      const time = new Date().toLocaleTimeString();
+      const payload = data ? `\n${JSON.stringify(data, null, 2)}` : '';
+      logsEl.textContent = `[${time}] ${message}${payload}\n\n` + logsEl.textContent;
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = `Trạng thái: ${text}`;
+    }
+
+    async function connect() {
+      if (connection) {
+        await disconnect();
+      }
+
+      const token = accessTokenEl.value.trim();
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl(hubUrlEl.value.trim(), {
+          accessTokenFactory: () => token
+        })
+        .withAutomaticReconnect()
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
+
+      connection.on('ReceiveNewOrder', payload => {
+        log('Nhận event ReceiveNewOrder', payload);
+      });
+
+      connection.on('ReceiveOrderStatusChanged', payload => {
+        log('Nhận event ReceiveOrderStatusChanged', payload);
+      });
+
+      connection.onreconnecting(() => setStatus('Đang reconnect...'));
+      connection.onreconnected(() => setStatus('Đã reconnect'));
+      connection.onclose(() => setStatus('Đã ngắt kết nối'));
+
+      try {
+        await connection.start();
+        setStatus('Đã kết nối');
+        log('Kết nối hub thành công');
+      } catch (error) {
+        setStatus('Kết nối thất bại');
+        log('Kết nối hub lỗi', { message: error.message });
+      }
+    }
+
+    async function disconnect() {
+      if (!connection) {
+        return;
+      }
+      await connection.stop();
+      connection = null;
+      setStatus('Đã ngắt kết nối');
+      log('Đã ngắt kết nối hub');
+    }
+
+    async function invoke(method, ...args) {
+      if (!connection) {
+        log('Chưa có kết nối hub');
+        return;
+      }
+      try {
+        await connection.invoke(method, ...args);
+        log(`Invoke thành công: ${method}`, args);
+      } catch (error) {
+        log(`Invoke lỗi: ${method}`, { message: error.message });
+      }
+    }
+
+    document.getElementById('connectBtn').addEventListener('click', connect);
+    document.getElementById('disconnectBtn').addEventListener('click', disconnect);
+    document.getElementById('joinKitchenBtn').addEventListener('click', () => invoke('JoinKitchen'));
+    document.getElementById('leaveKitchenBtn').addEventListener('click', () => invoke('LeaveKitchen'));
+    document.getElementById('joinTableBtn').addEventListener('click', () => invoke('JoinTableGroup', Number(tableIdEl.value)));
+    document.getElementById('leaveTableBtn').addEventListener('click', () => invoke('LeaveTableGroup', Number(tableIdEl.value)));
+    document.getElementById('clearLogsBtn').addEventListener('click', () => logsEl.textContent = '');
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SmartQRCoffee.Repositories.Data;
@@ -11,9 +12,11 @@ using SmartQRCoffee.Repositories.Data;
 namespace SmartQRCoffee.Repositories.Migrations
 {
     [DbContext(typeof(SmartQRCoffeeContext))]
-    partial class SmartQRCoffeeContextModelSnapshot : ModelSnapshot
+    [Migration("20260508070740_SyncSchemaWithCurrentModels")]
+    partial class SyncSchemaWithCurrentModels
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

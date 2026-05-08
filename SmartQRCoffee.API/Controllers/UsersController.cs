@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using SmartQRCoffee.Services.Contracts;
 using SmartQRCoffee.Services.DTOs;
+using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
@@ -13,16 +16,15 @@ public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IConfiguration _configuration;
 
-    public UsersController(IUserService userService, IJwtTokenService jwtTokenService)
+    public UsersController(IUserService userService, IJwtTokenService jwtTokenService, IConfiguration configuration)
     {
         _userService = userService;
         _jwtTokenService = jwtTokenService;
+        _configuration = configuration;
     }
 
-    /// <summary>
-    /// Login: xác thực user → set AccessToken + RefreshToken vào HttpOnly Cookie.
-    /// </summary>
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] UserLoginDto dto)
     {
@@ -30,46 +32,42 @@ public class UsersController : ControllerBase
         {
             var result = await _jwtTokenService.LoginAsync(dto);
 
-            SetTokenCookie("access_token", result.AccessToken, result.AccessTokenExpiry);
-            SetTokenCookie("refresh_token", result.RefreshToken, System.DateTime.UtcNow.AddDays(7));
+            SetTokenCookie(GetAccessTokenCookieName(), result.AccessToken, result.AccessTokenExpiry);
+            SetTokenCookie(GetRefreshTokenCookieName(), result.RefreshToken, DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()));
 
             return Ok(new { Message = "Đăng nhập thành công", User = result.User });
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             return BadRequest(new { Message = ex.Message });
         }
     }
 
-    /// <summary>
-    /// Exchange Token: đọc RefreshToken từ Cookie → nhận AccessToken và RefreshToken mới vào Cookie.
-    /// </summary>
     [HttpPost("exchange-token")]
     public async Task<IActionResult> ExchangeToken()
     {
         try
         {
-            var refreshToken = Request.Cookies["refresh_token"];
+            var refreshToken = Request.Cookies[GetRefreshTokenCookieName()];
             if (string.IsNullOrEmpty(refreshToken))
+            {
                 return Unauthorized(new { Message = "Không tìm thấy Refresh Token trong Cookie." });
+            }
 
             var dto = new ExchangeTokenDto { RefreshToken = refreshToken };
             var result = await _jwtTokenService.ExchangeTokenAsync(dto);
 
-            SetTokenCookie("access_token", result.AccessToken, result.AccessTokenExpiry);
-            SetTokenCookie("refresh_token", result.RefreshToken, System.DateTime.UtcNow.AddDays(7));
+            SetTokenCookie(GetAccessTokenCookieName(), result.AccessToken, result.AccessTokenExpiry);
+            SetTokenCookie(GetRefreshTokenCookieName(), result.RefreshToken, DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()));
 
             return Ok(new { Message = "Cấp lại Token thành công" });
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             return Unauthorized(new { Message = ex.Message });
         }
     }
 
-    /// <summary>
-    /// Logout: xóa RefreshToken trong DB và xóa Cookies.
-    /// </summary>
     [Authorize]
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
@@ -78,34 +76,25 @@ public class UsersController : ControllerBase
         {
             var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userIdStr))
+            {
                 return Unauthorized(new { Message = "Không tìm thấy thông tin user." });
+            }
 
             var userId = int.Parse(userIdStr);
             await _jwtTokenService.RevokeRefreshTokenAsync(userId);
 
-            Response.Cookies.Delete("access_token");
-            Response.Cookies.Delete("refresh_token");
+            Response.Cookies.Delete(GetAccessTokenCookieName());
+            Response.Cookies.Delete(GetRefreshTokenCookieName());
 
             return Ok(new { Message = "Đăng xuất thành công. Token đã bị xóa." });
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             return BadRequest(new { Message = ex.Message });
         }
     }
 
-    private void SetTokenCookie(string key, string token, System.DateTime expires)
-    {
-        var cookieOptions = new Microsoft.AspNetCore.Http.CookieOptions
-        {
-            HttpOnly = true,
-            Expires = expires,
-            Secure = true, // Chỉ truyền qua HTTPS
-            SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict
-        };
-        Response.Cookies.Append(key, token, cookieOptions);
-    }
-
+    [Authorize(Roles = "Admin")]
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] CreateUserDto dto)
     {
@@ -114,10 +103,10 @@ public class UsersController : ControllerBase
             var result = await _userService.CreateUserAsync(dto);
             return CreatedAtAction(nameof(Login), new { id = result.UserId }, result);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            return BadRequest(new 
-            { 
+            return BadRequest(new
+            {
                 Message = ex.Message,
                 InnerError = ex.InnerException?.Message
             });
@@ -128,8 +117,6 @@ public class UsersController : ControllerBase
     [HttpGet("profile")]
     public IActionResult GetProfile()
     {
-        // Token hợp lệ thì mới vào được hàm này.
-        // User.FindFirstValue sẽ lấy các Claims mà ta đã setup ở Payload lúc tạo Token!
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var username = User.FindFirstValue(ClaimTypes.Name);
         var role = User.FindFirstValue(ClaimTypes.Role);
@@ -142,4 +129,45 @@ public class UsersController : ControllerBase
             Role = role
         });
     }
+
+    private void SetTokenCookie(string key, string token, DateTime expires)
+    {
+        var sameSite = ParseSameSiteMode(_configuration["JwtConfig:Cookie:SameSite"]);
+        var securePolicy = ParseSecurePolicy(_configuration["JwtConfig:Cookie:SecurePolicy"]);
+        var secure = securePolicy switch
+        {
+            CookieSecurePolicy.Always => true,
+            CookieSecurePolicy.None => false,
+            _ => Request.IsHttps
+        };
+
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = _configuration.GetValue("JwtConfig:Cookie:HttpOnly", true),
+            Expires = expires,
+            Secure = secure,
+            SameSite = sameSite,
+            IsEssential = true
+        };
+
+        Response.Cookies.Append(key, token, cookieOptions);
+    }
+
+    private string GetAccessTokenCookieName() => _configuration["JwtConfig:Cookie:AccessTokenName"] ?? "access_token";
+    private string GetRefreshTokenCookieName() => _configuration["JwtConfig:Cookie:RefreshTokenName"] ?? "refresh_token";
+    private int GetRefreshTokenExpiryDays() => _configuration.GetValue<int>("JwtConfig:RefreshTokenExpirationDays");
+
+    private static SameSiteMode ParseSameSiteMode(string? value) => value?.ToLowerInvariant() switch
+    {
+        "none" => SameSiteMode.None,
+        "lax" => SameSiteMode.Lax,
+        _ => SameSiteMode.Strict
+    };
+
+    private static CookieSecurePolicy ParseSecurePolicy(string? value) => value?.ToLowerInvariant() switch
+    {
+        "always" => CookieSecurePolicy.Always,
+        "none" => CookieSecurePolicy.None,
+        _ => CookieSecurePolicy.SameAsRequest
+    };
 }
