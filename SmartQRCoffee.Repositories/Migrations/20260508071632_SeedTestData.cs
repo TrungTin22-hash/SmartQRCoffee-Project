@@ -19,6 +19,14 @@ VALUES
 ON CONFLICT (""RoleId"") DO NOTHING;
 
 
+INSERT INTO ""Users"" (""UserId"", ""Username"", ""PasswordHash"", ""RoleId"", ""IsActive"", ""RefreshToken"", ""RefreshTokenExpiryTime"")
+VALUES
+    (1, 'admin_demo', '$2a$11$CSQbS.Y7xB90Apxex/QQoelo2RoJWgLI2YloQOYz9ZlKoDSRjEEne', 1, true, NULL, NULL),
+    (2, 'staff_demo', '$2a$11$CSQbS.Y7xB90Apxex/QQoelo2RoJWgLI2YloQOYz9ZlKoDSRjEEne', 2, true, NULL, NULL),
+    (3, 'cashier_demo', '$2a$11$CSQbS.Y7xB90Apxex/QQoelo2RoJWgLI2YloQOYz9ZlKoDSRjEEne', 3, true, NULL, NULL)
+ON CONFLICT (""UserId"") DO NOTHING;
+
+
 INSERT INTO ""Tables"" (""TableId"", ""TableName"", ""QRCode"", ""IsActive"", ""IsOccupied"", ""SessionToken"")
 VALUES
     (1, 'Bàn 01', 'QR_TABLE_01', true, false, 'table-01-demo-token'),
@@ -60,6 +68,7 @@ DELETE FROM ""ProductOptions"" WHERE ""ProductOptionId"" IN (1, 2, 3, 4);
 DELETE FROM ""Products"" WHERE ""ProductId"" IN (1, 2, 3);
 DELETE FROM ""Categories"" WHERE ""CategoryId"" IN (1, 2);
 DELETE FROM ""Tables"" WHERE ""TableId"" IN (1, 2);
+DELETE FROM ""Users"" WHERE ""UserId"" IN (1, 2, 3);
 DELETE FROM ""Roles"" WHERE ""RoleId"" IN (1, 2, 3);
 ");
         }
